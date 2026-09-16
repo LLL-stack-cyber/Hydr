@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HYDROGUARD OS // CYBER-TWIN</title>
+    <!-- Include MQTT.js over WebSockets -->
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <style>
+        :root {
+            --neon-green: #00ff66;
+            --neon-cyan: #00f3ff;
+            --neon-red: #ff003c;
+            --dark-bg: #050505;
+            --panel-bg: #0a0a0c;
+            --border-glow: 0 0 10px rgba(0, 255, 102, 0.2);
+        }
+        
+        * { box-sizing: border-box; }
+        
+        body {
+            background-color: var(--dark-bg);
+            color: var(--neon-green);
+            font-family: 'Courier New', Courier, monospace;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+            background-image: 
+                linear-gradient(rgba(0, 255, 102, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 102, 0.03) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        header {
+            border-bottom: 2px solid var(--neon-cyan);
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        h1 { margin: 0; font-size: 1.5rem; text-shadow: 0 0 8px var(--neon-cyan); color: var(--neon-cyan); }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+            flex: 1;
+        }
+
+        .panel {
+            background: var(--panel-bg);
+            border: 1px solid var(--neon-green);
+            box-shadow: var(--border-glow);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .panel-title {
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            border-bottom: 1px dashed var(--neon-green);
+            padding-bottom: 5px;
+            margin-bottom: 15px;
+            color: var(--neon-cyan);
+        }
+
+        /* Readouts */
+        .metric { margin-bottom: 15px; }
+        .metric-label { font-size: 0.8rem; color: #888; }
+        .metric-value { font-size: 2rem; font-weight: bold; text-shadow: 0 0 5px var(--neon-green); }
+
+        /* Tanks */
+        .tank-container {
+            display: flex;
+            justify-content: space-around;
+            height: 200px;
+            margin-top: 20px;
+        }
+        .tank-wrap { display: flex; flex-direction: column; align-items: center; width: 60px; }
+        .tank {
+            width: 100%;
+            height: 150px;
+            border: 2px solid var(--neon-cyan);
+            position: relative;
+            background: rgba(0, 243, 255, 0.05);
+        }
+        .tank-liquid {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            background: var(--neon-cyan);
+            box-shadow: 0 0 15px var(--neon-cyan);
+            transition: height 0.5s ease-in-out;
+        }
+
+        /* Logs */
+        .terminal {
+            flex: 1;
+            overflow-y: auto;
+            font-size: 0.85rem;
+            color: #aaa;
+        }
+        .log-entry { margin-bottom: 4px; }
+        .log-entry.warn { color: #ffeb3b; }
+        .log-entry.critical { color: var(--neon-red); }
+
+        /* Override Button */
+        .btn-override {
+            background: transparent;
+            color: var(--neon-red);
+            border: 2px solid var(--neon-red);
+            padding: 15px;
+            font-size: 1.2rem;
+            font-family: inherit;
+            font-weight: bold;
+            cursor: pointer;
+            text-transform: uppercase;
+            box-shadow: 0 0 10px rgba(255, 0, 60, 0.3);
+            transition: all 0.1s;
+            margin-top: auto;
+        }
+        .btn-override:hover {
+            background: var(--neon-red);
+            color: white;
+            box-shadow: 0 0 20px var(--neon-red);
+        }
+        .btn-override:active { transform: scale(0.98); }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>SYS.HYDROGUARD // L4_DIGITAL_TWIN</h1>
+        <div id="connectionStatus" style="color: var(--neon-red);">[ MQTT: DISCONNECTED ]</div>
+    </header>
+
+    <div class="grid">
+        <!-- Sensor Readouts -->
+        <div class="panel">
+            <div class="panel-title">TELEMETRY_DATALINK</div>
+            <div class="metric">
+                <div class="metric-label">pH LEVEL</div>
+                <div class="metric-value" id="val-ph">--</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label">TDS (ppm)</div>
+                <div class="metric-value" id="val-tds">--</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label">TURBIDITY (NTU)</div>
+                <div class="metric-value" id="val-turb">--</div>
+            </div>
+        </div>
+
+        <!-- Digital Twin Physics -->
+        <div class="panel">
+            <div class="panel-title">PHYSICAL_SIM_TWIN</div>
+            <div class="tank-container">
+                <div class="tank-wrap">
+                    <div class="tank"><div class="tank-liquid" id="tank-raw" style="height: 0%;"></div></div>
+                    <div class="metric-label" style="margin-top: 10px;">RAW (0%)</div>
+                </div>
+                <div class="tank-wrap">
+                    <div class="tank"><div class="tank-liquid" id="tank-clean" style="height: 0%;"></div></div>
+                    <div class="metric-label" style="margin-top: 10px;">CLN (0%)</div>
+                </div>
+            </div>
+            <button class="btn-override" onclick="triggerOverride()">!! EMERGENCY OVERRIDE !!</button>
+        </div>
+
+        <!-- Terminal Logs -->
+        <div class="panel">
+            <div class="panel-title">SYS_LOGS // STDOUT</div>
+            <div class="terminal" id="terminal">
+                <div class="log-entry">> BOOT SEQUENCE INITIATED...</div>
+                <div class="log-entry">> AWAITING TELEMETRY SYNC...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Use a public WebSocket broker for demo purposes (e.g., test.mosquitto.org)
+        const brokerUrl = 'wss://test.mosquitto.org:8081/mqtt';
+        const client = mqtt.connect(brokerUrl);
+        
+        const terminal = document.getElementById('terminal');
+        const telemetryTopic = 'hydroguard/telemetry/live';
+        const controlTopic = 'hydroguard/control';
+
+        function logToTerminal(msg, type = 'normal') {
+            const el = document.createElement('div');
+            el.className = `log-entry ${type}`;
+            el.innerText = `[${new Date().toISOString().substring(11,19)}] ${msg}`;
+            terminal.appendChild(el);
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+
+        client.on('connect', () => {
+            document.getElementById('connectionStatus').innerText = '[ MQTT: CONNECTED_SECURE ]';
+            document.getElementById('connectionStatus').style.color = 'var(--neon-green)';
+            logToTerminal('> MQTT WEBSOCKET LINK ESTABLISHED');
+            client.subscribe(telemetryTopic);
+        });
+
+        client.on('message', (topic, message) => {
+            if (topic === telemetryTopic) {
+                try {
+                    const data = JSON.parse(message.toString());
+                    
+                    // Update Texts
+                    document.getElementById('val-ph').innerText = data.ph.toFixed(2);
+                    document.getElementById('val-tds').innerText = data.tds;
+                    document.getElementById('val-turb').innerText = data.turbidity.toFixed(2);
+                    
+                    // Update Tanks (0-100%)
+                    const rawLvl = Math.max(0, Math.min(100, data.raw_level));
+                    const clnLvl = Math.max(0, Math.min(100, data.clean_level));
+                    
+                    document.getElementById('tank-raw').style.height = `${rawLvl}%`;
+                    document.getElementById('tank-raw').parentElement.nextElementSibling.innerText = `RAW (${rawLvl.toFixed(0)}%)`;
+                    
+                    document.getElementById('tank-clean').style.height = `${clnLvl}%`;
+                    document.getElementById('tank-clean').parentElement.nextElementSibling.innerText = `CLN (${clnLvl.toFixed(0)}%)`;
+
+                } catch (e) {
+                    logToTerminal(`> PARSE_ERR: ${e.message}`, 'warn');
+                }
+            }
+        });
+
+        function triggerOverride() {
+            logToTerminal('> [AUTH ACCEPTED] EXECUTING EMERGENCY BACKWASH PROTOCOL...', 'critical');
+            client.publish(controlTopic, JSON.stringify({ command: 'BACKWASH_START', override: true }), { qos: 1 });
+            
+            // Visual feedback flash
+            document.body.style.boxShadow = "inset 0 0 100px rgba(255,0,60,0.8)";
+            setTimeout(() => { document.body.style.boxShadow = "none"; }, 300);
+        }
+
+        // Mock data generator for testing the UI standalone without real hardware
+        setInterval(() => {
+            if (client.connected) {
+                const mockData = {
+                    ph: 6.8 + (Math.random() * 0.4),
+                    tds: Math.floor(250 + Math.random() * 50),
+                    turbidity: 1.5 + (Math.random() * 0.5),
+                    raw_level: 40 + (Math.random() * 20),
+                    clean_level: 60 + (Math.random() * 20)
+                };
+                client.publish(telemetryTopic, JSON.stringify(mockData));
+            }
+        }, 2000);
+    </script>
+</body>
+</html>
