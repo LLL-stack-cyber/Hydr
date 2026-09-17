@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Droplets, Brain, Server, Settings, Activity } from 'lucide-react';
+import { LayoutDashboard, Droplets, Brain, Server, Settings, Activity, Network } from 'lucide-react';
 
 interface SidebarProps {
   activeTab: string;
@@ -13,6 +13,7 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
     { id: 'ai', label: 'AI Intelligence', icon: Brain },
     { id: 'device', label: 'Device & Data', icon: Server },
     { id: 'settings', label: 'History & Settings', icon: Settings },
+    { id: 'swarm', label: 'Swarm Network', icon: Network },
   ];
 
   return (
@@ -23,6 +24,7 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
         </div>
         <span className="text-xl font-semibold tracking-tight text-[#E5E7EB] font-['Chakra_Petch']">HYDROGUARD</span>
       </div>
+
       <nav className="flex-1 px-4">
         <div className="space-y-1">
           {navItems.map((item) => (
@@ -41,6 +43,7 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
           ))}
         </div>
       </nav>
+
       <div className="p-6 mt-auto">
         <div className="p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-xl">
           <p className="text-xs font-semibold text-indigo-400 uppercase tracking-wider mb-2">System Health</p>

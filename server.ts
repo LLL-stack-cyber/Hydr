@@ -244,6 +244,10 @@ setInterval(async () => {
         systemStatus.database_connected = true;
       } else {
         console.warn("[Edge Buffer] Failed to upload buffered rows:", error.message);
+        if (error.message.includes("Could not find the table") || error.message.includes("relation \"public.sensor_readings\" does not exist")) {
+          console.warn("[ACTION REQUIRED] The 'sensor_readings' table is missing in your Supabase project.");
+          console.warn("Please run the SQL commands found in 'supabase_schema.sql' in your Supabase SQL Editor.");
+        }
       }
     }
   } catch (e) {
