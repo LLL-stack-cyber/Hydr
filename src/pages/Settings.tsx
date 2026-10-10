@@ -11,7 +11,7 @@ export function Settings() {
   const [deviceId, setDeviceId] = useState('HYDROGUARD-ESP32-01');
   const [telemetryTopic, setTelemetryTopic] = useState('hydroguard_shreyas_insef26/telemetry');
   const [controlTopic, setControlTopic] = useState('hydroguard_shreyas_insef26/control');
-  const [supabaseUrl, setSupabaseUrl] = useState('');
+  const [supabaseUrl, setSupabaseUrl] = useState('https://fuuefqovodauzarvahiy.supabase.co');
   const [supabaseServiceRoleKey, setSupabaseServiceRoleKey] = useState('');
   const [saveSuccess, setSaveSuccess] = useState(false);
 

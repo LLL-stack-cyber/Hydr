@@ -1,7 +1,9 @@
 {
   "name": "HYDROGUARD AI - ESP32 + MQTT + Random Forest",
   "description": "Autonomous Water Reclamation & Safety Platform with real-time digital twin, IoT sensor telemetry, actuator control, and Random Forest water quality intelligence.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": [
+    "microphone"
+  ],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]

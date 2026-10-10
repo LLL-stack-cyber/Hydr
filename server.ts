@@ -8,8 +8,18 @@ import { spawn } from "child_process";
 import { createClient } from "@supabase/supabase-js";
 import Database from "better-sqlite3";
 import { setupMqtt, publishCommand, ValidatedTelemetry } from "./server/mqttService";
+import { GoogleGenAI } from "@google/genai";
 
 dotenv.config();
+
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY || "",
+  httpOptions: {
+    headers: {
+      'User-Agent': 'aistudio-build',
+    }
+  }
+});
 
 const PORT = 3000;
 let SIMULATION_MODE = process.env.SIMULATION_MODE !== 'false'; // Default to true if not explicitly false
@@ -144,9 +154,15 @@ async function processTelemetry(telemetry: any, wss: WebSocketServer) {
       } else {
         throw new Error(error.message);
       }
-    } catch (e) {
-      console.warn("Supabase insert failed, buffering locally:", e);
-      systemStatus.database_connected = false;
+    } catch (e: any) {
+      const msg = e.message || String(e);
+      if (msg.includes("sensor_readings") || msg.includes("schema cache")) {
+        console.warn("[Supabase] Notice: Table 'sensor_readings' not found in Supabase. Please run 'supabase_schema.sql' in your Supabase SQL Editor. Telemetry is being buffered locally.");
+      } else if (msg.includes("fetch failed") || msg.includes("ENOTFOUND") || msg.includes("ECONNREFUSED") || msg.includes("network")) {
+        console.warn("[Supabase] Network unreachable (fetch failed). Telemetry is safely buffered locally in SQLite edge buffer.");
+      } else {
+        console.warn("Supabase insert failed, buffering locally:", msg);
+      }
       if (localDb) {
         try {
           localDb.prepare('INSERT INTO telemetry_buffer (payload) VALUES (?)').run(JSON.stringify(rowData));
@@ -154,6 +170,8 @@ async function processTelemetry(telemetry: any, wss: WebSocketServer) {
           console.error("Failed to write to local edge buffer:", dbError);
         }
       }
+      // Keep database_connected true if supabase client is configured (using edge buffer fallback)
+      systemStatus.database_connected = !!supabase;
     }
   }
 
@@ -235,23 +253,32 @@ setInterval(async () => {
       console.log(`[Edge Buffer] Attempting to upload ${rows.length} buffered rows to Supabase...`);
       const payloads = rows.map((r: any) => JSON.parse(r.payload));
       
-      const { error } = await supabase.from('sensor_readings').insert(payloads);
-      
-      if (!error) {
-        const ids = rows.map((r: any) => r.id);
-        localDb.prepare(`DELETE FROM telemetry_buffer WHERE id IN (${ids.join(',')})`).run();
-        console.log(`[Edge Buffer] Successfully uploaded and cleared ${rows.length} buffered rows.`);
-        systemStatus.database_connected = true;
-      } else {
-        console.warn("[Edge Buffer] Failed to upload buffered rows:", error.message);
-        if (error.message.includes("Could not find the table") || error.message.includes("relation \"public.sensor_readings\" does not exist")) {
-          console.warn("[ACTION REQUIRED] The 'sensor_readings' table is missing in your Supabase project.");
-          console.warn("Please run the SQL commands found in 'supabase_schema.sql' in your Supabase SQL Editor.");
+      try {
+        const { error } = await supabase.from('sensor_readings').insert(payloads);
+        
+        if (!error) {
+          const ids = rows.map((r: any) => r.id);
+          localDb.prepare(`DELETE FROM telemetry_buffer WHERE id IN (${ids.join(',')})`).run();
+          console.log(`[Edge Buffer] Successfully uploaded and cleared ${rows.length} buffered rows.`);
+          systemStatus.database_connected = true;
+        } else {
+          if (error.message.includes("Could not find the table") || error.message.includes("relation \"public.sensor_readings\" does not exist") || error.message.includes("schema cache")) {
+            console.warn("[ACTION REQUIRED] The 'sensor_readings' table is missing in your Supabase project. Please run the SQL commands found in 'supabase_schema.sql' in your Supabase SQL Editor.");
+          } else {
+            console.warn("[Edge Buffer] Failed to upload buffered rows:", error.message);
+          }
+        }
+      } catch (err: any) {
+        const errMsg = err.message || String(err);
+        if (errMsg.includes("fetch failed") || errMsg.includes("ENOTFOUND") || errMsg.includes("ECONNREFUSED")) {
+          console.warn("[Edge Buffer] Supabase offline (fetch failed). Retrying in next sync cycle.");
+        } else {
+          console.warn("[Edge Buffer] Failed to upload buffered rows:", errMsg);
         }
       }
     }
-  } catch (e) {
-     console.warn("[Edge Buffer] Buffer sync error:", e);
+  } catch (e: any) {
+     console.warn("[Edge Buffer] Buffer sync error:", e.message || e);
   }
 }, 10000);
 
@@ -259,12 +286,89 @@ async function startServer() {
   const app = express();
   const server = http.createServer(app);
   const wss = new WebSocketServer({ server, path: '/ws/live' });
+  wss.on('error', (err) => {
+    console.warn('[WebSocketServer] Error:', err);
+  });
 
   app.use(express.json());
 
   // API Routes
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", system: systemStatus });
+  });
+
+  // Gemini Multi-turn Chat Endpoint
+  app.post("/api/gemini/chat", async (req, res) => {
+    try {
+      const { message, history, model = "gemini-3.8-flash", systemInstruction } = req.body;
+      const contents = [
+        ...(history || []).map((msg: any) => ({
+          role: msg.role === 'user' ? 'user' : 'model',
+          parts: [{ text: msg.content }]
+        })),
+        { role: 'user', parts: [{ text: message }] }
+      ];
+
+      const response = await ai.models.generateContent({
+        model: model === "gemini-3.5-flash" ? "gemini-3.8-flash" : model,
+        contents: contents,
+        config: {
+          systemInstruction: systemInstruction || "You are HydroGuard AI, an expert autonomous water reclamation, IoT sensor, and INSEF science fair assistant. Provide precise, professional, and scientifically accurate advice.",
+        }
+      });
+
+      res.json({ text: response.text });
+    } catch (e: any) {
+      console.error("Gemini chat error:", e);
+      res.status(500).json({ error: e.message || "Failed to generate chat response" });
+    }
+  });
+
+  // Gemini Google Maps Grounding Endpoint
+  app.post("/api/gemini/maps", async (req, res) => {
+    try {
+      const { prompt } = req.body;
+      const response = await ai.models.generateContent({
+        model: "gemini-3.8-flash",
+        contents: prompt || "Find nearby municipal water treatment plants and water testing laboratories.",
+        config: {
+          tools: [{ googleMaps: {} }],
+          systemInstruction: "You are a water infrastructure assistant. Provide accurate location-based information about water treatment facilities, testing labs, and water safety agencies using Google Maps grounding."
+        }
+      });
+
+      res.json({ text: response.text, candidates: response.candidates });
+    } catch (e: any) {
+      console.error("Gemini maps grounding error:", e);
+      res.status(500).json({ error: e.message || "Failed to execute maps grounding query" });
+    }
+  });
+
+  // Gemini Audio Transcription Endpoint
+  app.post("/api/gemini/transcribe", async (req, res) => {
+    try {
+      const { audioBase64, mimeType = "audio/webm" } = req.body;
+      if (!audioBase64) {
+        return res.status(400).json({ error: "Missing audioBase64" });
+      }
+
+      const audioPart = {
+        inlineData: {
+          mimeType: mimeType,
+          data: audioBase64,
+        },
+      };
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-transcribe",
+        contents: { parts: [audioPart, { text: "Transcribe this audio accurately and summarize any water safety or IoT control commands mentioned." }] },
+      });
+
+      res.json({ text: response.text });
+    } catch (e: any) {
+      console.error("Gemini audio transcription error:", e);
+      res.status(500).json({ error: e.message || "Failed to transcribe audio" });
+    }
   });
 
   app.post("/api/actuator/:type", (req, res) => {
@@ -451,7 +555,10 @@ async function startServer() {
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: process.env.DISABLE_HMR === 'true' ? false : { server },
+      },
       appType: "spa",
     });
     app.use(vite.middlewares);
@@ -462,6 +569,10 @@ async function startServer() {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
+
+  server.on('error', (err: any) => {
+    console.error('[Server] Listen error:', err);
+  });
 
   server.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);

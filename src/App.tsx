@@ -7,9 +7,13 @@ import { AiIntelligence } from './pages/AiIntelligence';
 import { DeviceData } from './pages/DeviceData';
 import { Settings } from './pages/Settings';
 import { SwarmCommandCenter } from './pages/SwarmCommandCenter';
+import { GeminiChatTab } from './components/GeminiChatTab';
+import { MapsGroundingTab } from './components/MapsGroundingTab';
+import { AudioTranscribeTab } from './components/AudioTranscribeTab';
 import { Login } from './pages/Login';
 import { telemetryService, AppState } from './services/telemetryService';
 import { AdminLockScreen } from './components/AdminLockScreen';
+import { AlertSystem } from './components/AlertSystem';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -31,7 +35,7 @@ export default function App() {
 
   return (
     <AdminLockScreen>
-    <div className="h-screen w-full bg-[#0A0A0A] text-[#E5E7EB] font-sans flex overflow-hidden">
+    <div className="h-screen w-full bg-[#0A0A0A] text-[#E5E7EB] font-sans flex overflow-hidden relative">
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
       
       <main className="flex-1 flex flex-col min-w-0">
@@ -64,10 +68,15 @@ export default function App() {
         {activeTab === 'dashboard' && <Dashboard />}
         {activeTab === 'water_quality' && <WaterQuality />}
         {activeTab === 'ai' && <AiIntelligence />}
+        {activeTab === 'gemini_chat' && <GeminiChatTab />}
+        {activeTab === 'maps_grounding' && <MapsGroundingTab />}
+        {activeTab === 'audio_transcribe' && <AudioTranscribeTab />}
         {activeTab === 'device' && <DeviceData />}
         {activeTab === 'settings' && <Settings />}
         {activeTab === 'swarm' && <SwarmCommandCenter />}
       </main>
+
+      <AlertSystem telemetry={appState.telemetry} />
     </div>
     </AdminLockScreen>
   );

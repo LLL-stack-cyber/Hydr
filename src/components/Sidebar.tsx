@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Droplets, Brain, Server, Settings, Activity, Network } from 'lucide-react';
+import { LayoutDashboard, Droplets, Brain, Server, Settings, Activity, Network, MessageSquare, MapPin, Mic } from 'lucide-react';
 
 interface SidebarProps {
   activeTab: string;
@@ -11,6 +11,9 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
     { id: 'dashboard', label: 'Command Center', icon: LayoutDashboard },
     { id: 'water_quality', label: 'Water Quality', icon: Droplets },
     { id: 'ai', label: 'AI Intelligence', icon: Brain },
+    { id: 'gemini_chat', label: 'Gemini Chatbot', icon: MessageSquare },
+    { id: 'maps_grounding', label: 'Maps Grounding', icon: MapPin },
+    { id: 'audio_transcribe', label: 'Audio Transcribe', icon: Mic },
     { id: 'device', label: 'Device & Data', icon: Server },
     { id: 'settings', label: 'History & Settings', icon: Settings },
     { id: 'swarm', label: 'Swarm Network', icon: Network },
